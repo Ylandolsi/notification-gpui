@@ -329,6 +329,31 @@ fn top_highlight() -> impl IntoElement {
         )))
 }
 
+/// Soft light falling from the top: a white wash that fades out over the upper part of the shape.
+fn sheen(shape_height: f32) -> impl IntoElement {
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .h(px((shape_height * 0.55).min(48.0)))
+        .bg(linear_gradient(
+            180.0,
+            linear_color_stop(hsla(0.0, 0.0, 1.0, 0.07), 0.0),
+            linear_color_stop(hsla(0.0, 0.0, 1.0, 0.0), 1.0),
+        ))
+}
+
+/// A faint light ring just inside the border, so the edge reads as a lit bevel (coss ui's `before:inset-0`).
+fn rim(radius: f32) -> impl IntoElement {
+    div()
+        .absolute()
+        .inset_0()
+        .rounded_b(px((radius - 1.0).max(0.0)))
+        .border_1()
+        .border_color(hsla(0.0, 0.0, 1.0, 0.09))
+}
+
 /// Title over a muted second line, as the toast and the list rows show a notification.
 fn text_column(n: &Notification) -> impl IntoElement {
     let sub = if n.body.is_empty() {
@@ -373,6 +398,7 @@ impl Render for PanelView {
             window.request_animation_frame();
         }
         let (w, h) = (self.w.value(t), self.h.value(t));
+        let radius = (h / 2.0).min(22.0);
         let (target_w, target_h) = self.size();
         let dnd = self.store.dnd();
         // The shape is flush with the top edge: square there, rounded below, like a notch. Its content is
@@ -386,7 +412,7 @@ impl Render for PanelView {
             .justify_center()
             .items_start()
             .overflow_hidden()
-            .rounded_b(px((h / 2.0).min(22.0)))
+            .rounded_b(px(radius))
             // Charcoal with a lit top edge, a dark hairline and a soft shadow underneath, like a raised key.
             .bg(linear_gradient(
                 180.0,
@@ -403,6 +429,8 @@ impl Render for PanelView {
             }])
             .relative()
             .child(top_highlight())
+            .child(sheen(h))
+            .child(rim(radius))
             .text_color(gpui::white())
             .text_size(px(15.0))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.on_hover(*hovered, cx)));
