@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Bounds, Context, ElementId, Hsla, InteractiveElement, IntoElement,
+    App, AppContext, Bounds, Context, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, Render, Stateful, StatefulInteractiveElement, Styled, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, rgb, size,
 };
@@ -39,9 +39,9 @@ const WINDOW: (f32, f32) = (LIST_W, LIST_HEADER + LIST_ROWS as f32 * LIST_ROW + 
 /// shape changes size under the pointer.
 const HOVER_LEAVE: Duration = Duration::from_millis(120);
 
-/// Sacramento (OFL, see `assets/`): a monoline cursive close to Apple's "hello" lettering, used for titles.
-pub const SCRIPT_FONT_DATA: &[u8] = include_bytes!("../assets/Sacramento-Regular.ttf");
-const SCRIPT_FONT: &str = "Sacramento";
+/// Rubik (OFL, see `assets/`), a variable-weight font bundled so the island looks the same on every machine.
+pub const FONT_DATA: &[u8] = include_bytes!("../assets/Rubik.ttf");
+const FONT: &str = "Rubik";
 
 const IDLE_DOT: u32 = 0x8A8A93;
 const DND_DOT: u32 = 0xF5A623;
@@ -325,9 +325,8 @@ fn text_column(n: &Notification) -> impl IntoElement {
         .child(
             div()
                 .truncate()
-                .font_family(SCRIPT_FONT)
-                .text_size(px(26.0))
-                .line_height(px(28.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(14.0))
                 .child(n.title.clone()),
         )
         .child(
@@ -395,13 +394,11 @@ impl Render for PanelView {
                     } else {
                         format!("{count} notification{}", if count == 1 { "" } else { "s" })
                     };
-                    content.px(px(16.0)).gap(px(10.0)).child(dot(colour)).child(
-                        div()
-                            .font_family(SCRIPT_FONT)
-                            .text_size(px(20.0))
-                            .truncate()
-                            .child(hint),
-                    )
+                    content
+                        .px(px(16.0))
+                        .gap(px(10.0))
+                        .child(dot(colour))
+                        .child(div().text_size(px(13.0)).truncate().child(hint))
                 } else {
                     content.justify_center().child(dot(colour))
                 }
@@ -438,8 +435,7 @@ impl Render for PanelView {
                     .child(
                         div()
                             .flex_1()
-                            .font_family(SCRIPT_FONT)
-                            .text_size(px(26.0))
+                            .font_weight(FontWeight::MEDIUM)
                             .child("Notifications"),
                     )
                     .child(
@@ -494,6 +490,7 @@ impl Render for PanelView {
         };
         div()
             .id("panel")
+            .font_family(FONT)
             .size_full()
             .flex()
             .justify_center()

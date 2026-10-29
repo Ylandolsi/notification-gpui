@@ -58,9 +58,9 @@ fn daemon() -> anyhow::Result<()> {
     Application::new().run(move |cx| {
         if let Err(err) = cx
             .text_system()
-            .add_fonts(vec![std::borrow::Cow::Borrowed(panel::SCRIPT_FONT_DATA)])
+            .add_fonts(vec![std::borrow::Cow::Borrowed(panel::FONT_DATA)])
         {
-            eprintln!("could not load the script font: {err}");
+            eprintln!("could not load the font: {err}");
         }
         let Some(monitor) = monitors::primary() else {
             eprintln!("no display found");
