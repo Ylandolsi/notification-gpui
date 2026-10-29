@@ -3,6 +3,7 @@
 
 mod cli;
 mod config;
+mod depth;
 mod geom;
 mod model;
 mod monitors;

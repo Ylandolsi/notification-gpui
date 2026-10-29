@@ -11,13 +11,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Bounds, BoxShadow, Context, ElementId, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, Render, Stateful, StatefulInteractiveElement, Styled, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, hsla,
-    linear_color_stop, linear_gradient, point, px, rgb, size,
+    App, AppContext, Bounds, BoxShadow, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowKind, WindowOptions, div, hsla, linear_color_stop, linear_gradient, point,
+    px, rgb, size,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+use crate::depth::{ButtonTone, button};
 use crate::geom::PhysicalRect;
 use crate::model::{Cmd, Notification, Store, Urgency};
 use crate::monitors::Monitor;
@@ -328,20 +329,6 @@ fn top_highlight() -> impl IntoElement {
         )))
 }
 
-fn button(id: impl Into<ElementId>, label: &str, bg: u32) -> Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .px(px(10.0))
-        .py(px(4.0))
-        .rounded(px(6.0))
-        .border_1()
-        .border_color(hsla(0.0, 0.0, 1.0, 0.08))
-        .bg(rgb(bg))
-        .text_size(px(12.0))
-        .child(label.to_string())
-}
-
 /// Title over a muted second line, as the toast and the list rows show a notification.
 fn text_column(n: &Notification) -> impl IntoElement {
     let sub = if n.body.is_empty() {
@@ -489,16 +476,20 @@ impl Render for PanelView {
                         button(
                             "dnd",
                             if dnd { "DND on" } else { "DND off" },
-                            if dnd { 0x7a5410 } else { 0x3a3a3a },
+                            if dnd {
+                                ButtonTone::Primary(0xB7791F)
+                            } else {
+                                ButtonTone::Outline
+                            },
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_dnd(cx))),
                     )
                     .child(
-                        button("clear", "Clear", 0x3a3a3a)
+                        button("clear", "Clear", ButtonTone::Outline)
                             .on_click(cx.listener(|this, _, _, cx| this.clear(cx))),
                     )
                     .child(
-                        button("close", "×", 0x3a3a3a)
+                        button("close", "×", ButtonTone::Outline)
                             .on_click(cx.listener(|this, _, _, cx| this.close_list(cx))),
                     );
                 let mut rows = div().flex_none().w_full().flex().flex_col();
@@ -527,7 +518,7 @@ impl Render for PanelView {
                                 .items_center()
                                 .child(dot(urgency_colour(n.urgency)))
                                 .child(text_column(n))
-                                .child(button(("remove", ix), "×", 0x2a2a2a).on_click(
+                                .child(button(("remove", ix), "×", ButtonTone::Ghost).on_click(
                                     cx.listener(move |this, _, _, cx| this.remove(&id, cx)),
                                 )),
                         );
