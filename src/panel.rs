@@ -36,7 +36,7 @@ const LIST_EMPTY: f32 = 44.0;
 const LIST_ROWS: usize = 5;
 /// The window's own size: the biggest shape. It never changes; the clip follows the shape.
 /// Room kept around the shape, on the sides and below, for its shadow.
-const MARGIN: f32 = 14.0;
+const MARGIN: f32 = 20.0;
 const WINDOW: (f32, f32) = (
     LIST_W + 2.0 * MARGIN,
     LIST_HEADER + LIST_ROWS as f32 * LIST_ROW + 8.0 + MARGIN,
@@ -409,9 +409,9 @@ impl Render for PanelView {
             .border_1()
             .border_color(hsla(0.0, 0.0, 0.0, 0.6))
             .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.45),
-                offset: point(px(0.0), px(6.0)),
-                blur_radius: px(16.0),
+                color: hsla(0.0, 0.0, 0.0, 0.35),
+                offset: point(px(0.0), px(3.0)),
+                blur_radius: px(8.0),
                 spread_radius: px(0.0),
             }])
             .relative()
