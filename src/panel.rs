@@ -26,7 +26,7 @@ use crate::spring::Spring;
 use crate::winapi::{self as window, Hwnd};
 
 /// Shape sizes in logical pixels. The shape is flush with the top edge of the screen.
-const IDLE: (f32, f32) = (120.0, 30.0);
+const IDLE: (f32, f32) = (150.0, 10.0);
 const HOVER: (f32, f32) = (330.0, 40.0);
 const TOAST: (f32, f32) = (440.0, 68.0);
 const LIST_W: f32 = 440.0;
@@ -434,7 +434,19 @@ impl Render for PanelView {
                         .child(dot(colour))
                         .child(div().text_size(px(13.0)).truncate().child(hint))
                 } else {
-                    content.justify_center().child(dot(colour))
+                    // A bare sliver; only Do Not Disturb marks it, with a short amber line.
+                    let sliver = content.justify_center();
+                    if dnd {
+                        sliver.child(
+                            div()
+                                .w(px(28.0))
+                                .h(px(2.0))
+                                .rounded_full()
+                                .bg(Hsla::from(rgb(DND_DOT))),
+                        )
+                    } else {
+                        sliver
+                    }
                 }
             }
             View::Toast(n) => {
