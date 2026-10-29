@@ -56,6 +56,12 @@ fn daemon() -> anyhow::Result<()> {
     println!("notchd listening on 127.0.0.1:{port}");
 
     Application::new().run(move |cx| {
+        if let Err(err) = cx
+            .text_system()
+            .add_fonts(vec![std::borrow::Cow::Borrowed(panel::SCRIPT_FONT_DATA)])
+        {
+            eprintln!("could not load the script font: {err}");
+        }
         let Some(monitor) = monitors::primary() else {
             eprintln!("no display found");
             cx.quit();
