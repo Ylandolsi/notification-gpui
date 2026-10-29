@@ -11,9 +11,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Bounds, Context, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Render, Stateful, StatefulInteractiveElement, Styled, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, rgb, size,
+    App, AppContext, Bounds, BoxShadow, Context, ElementId, FontWeight, Hsla, InteractiveElement,
+    IntoElement, ParentElement, Render, Stateful, StatefulInteractiveElement, Styled, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, hsla,
+    linear_color_stop, linear_gradient, point, px, rgb, size,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -34,7 +35,12 @@ const LIST_EMPTY: f32 = 44.0;
 /// Rows the list shows; the rest stay in history.
 const LIST_ROWS: usize = 5;
 /// The window's own size: the biggest shape. It never changes; the clip follows the shape.
-const WINDOW: (f32, f32) = (LIST_W, LIST_HEADER + LIST_ROWS as f32 * LIST_ROW + 8.0);
+/// Room kept around the shape, on the sides and below, for its shadow.
+const MARGIN: f32 = 14.0;
+const WINDOW: (f32, f32) = (
+    LIST_W + 2.0 * MARGIN,
+    LIST_HEADER + LIST_ROWS as f32 * LIST_ROW + 8.0 + MARGIN,
+);
 /// How long a pointer may leave before the hover shape collapses: GPUI can report a short leave while the
 /// shape changes size under the pointer.
 const HOVER_LEAVE: Duration = Duration::from_millis(120);
@@ -246,9 +252,10 @@ impl PanelView {
     fn clip(&mut self, size: (f32, f32)) {
         self.window_size = size;
         let scale = self.monitor.scale;
+        // The clip keeps room around the shape (the sides and the bottom) for its shadow.
         let (w, h) = (
-            (size.0 * scale).round() as i32,
-            (size.1 * scale).round() as i32,
+            ((size.0 + 2.0 * MARGIN) * scale).round() as i32,
+            ((size.1 + MARGIN) * scale).round() as i32,
         );
         // The region is in window coordinates; the shape is drawn in the client area.
         let (client, outer) = (
@@ -298,6 +305,29 @@ fn dot(colour: Hsla) -> impl IntoElement {
     div().flex_none().size(px(8.0)).rounded_full().bg(colour)
 }
 
+/// A 1px light line along the top of the shape, brightest in the middle, that fades out at both ends.
+fn top_highlight() -> impl IntoElement {
+    let clear = hsla(0.0, 0.0, 1.0, 0.0);
+    let lit = hsla(0.0, 0.0, 1.0, 0.28);
+    div()
+        .absolute()
+        .top_0()
+        .left(px(14.0))
+        .right(px(14.0))
+        .h(px(1.0))
+        .flex()
+        .child(div().flex_1().h_full().bg(linear_gradient(
+            90.0,
+            linear_color_stop(clear, 0.0),
+            linear_color_stop(lit, 1.0),
+        )))
+        .child(div().flex_1().h_full().bg(linear_gradient(
+            90.0,
+            linear_color_stop(lit, 0.0),
+            linear_color_stop(clear, 1.0),
+        )))
+}
+
 fn button(id: impl Into<ElementId>, label: &str, bg: u32) -> Stateful<gpui::Div> {
     div()
         .id(id)
@@ -305,6 +335,8 @@ fn button(id: impl Into<ElementId>, label: &str, bg: u32) -> Stateful<gpui::Div>
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(6.0))
+        .border_1()
+        .border_color(hsla(0.0, 0.0, 1.0, 0.08))
         .bg(rgb(bg))
         .text_size(px(12.0))
         .child(label.to_string())
@@ -368,7 +400,22 @@ impl Render for PanelView {
             .items_start()
             .overflow_hidden()
             .rounded_b(px((h / 2.0).min(22.0)))
-            .bg(rgb(0x000000))
+            // Charcoal with a lit top edge, a dark hairline and a soft shadow underneath, like a raised key.
+            .bg(linear_gradient(
+                180.0,
+                linear_color_stop(rgb(0x2C2C2F), 0.0),
+                linear_color_stop(rgb(0x1B1B1D), 1.0),
+            ))
+            .border_1()
+            .border_color(hsla(0.0, 0.0, 0.0, 0.6))
+            .shadow(vec![BoxShadow {
+                color: hsla(0.0, 0.0, 0.0, 0.45),
+                offset: point(px(0.0), px(6.0)),
+                blur_radius: px(16.0),
+                spread_radius: px(0.0),
+            }])
+            .relative()
+            .child(top_highlight())
             .text_color(gpui::white())
             .text_size(px(15.0))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.on_hover(*hovered, cx)));
