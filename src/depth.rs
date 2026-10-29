@@ -2,10 +2,43 @@
 //! The recipe and its reasons are in the `gpui-depth` skill (`.claude/skills/gpui-depth`); keep this file and
 //! the skill's `references/depth.rs` identical.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use gpui::{
-    BoxShadow, Div, ElementId, Hsla, InteractiveElement, ParentElement, Stateful,
+    BoxShadow, Div, ElementId, Hsla, InteractiveElement, ParentElement, Pixels, Stateful,
     StatefulInteractiveElement, Styled, div, hsla, point, px, rgb,
 };
+
+/// One physical pixel, in logical pixels, as `f32` bits. A 1px logical border at a 150% display is 1.5
+/// physical pixels, so it lands unevenly on the pixel grid and curves look ragged.
+static HAIRLINE: AtomicU32 = AtomicU32::new(0x3F80_0000); // 1.0
+
+/// Call once with the display's scale factor (1.0, 1.5, 2.0 ...) before building any element.
+pub fn set_scale(scale: f32) {
+    HAIRLINE.store((1.0 / scale.max(0.5)).to_bits(), Ordering::Relaxed);
+}
+
+/// The width of a border that is exactly one physical pixel.
+pub fn hairline() -> Pixels {
+    px(f32::from_bits(HAIRLINE.load(Ordering::Relaxed)))
+}
+
+/// A one-physical-pixel border on all four sides.
+pub fn border<E: Styled>(mut el: E) -> E {
+    let w = hairline();
+    let b = &mut el.style().border_widths;
+    b.top = Some(w.into());
+    b.right = Some(w.into());
+    b.bottom = Some(w.into());
+    b.left = Some(w.into());
+    el
+}
+
+/// A one-physical-pixel border on the top side only.
+pub fn border_top<E: Styled>(mut el: E) -> E {
+    el.style().border_widths.top = Some(hairline().into());
+    el
+}
 
 pub fn white(alpha: f32) -> Hsla {
     hsla(0.0, 0.0, 1.0, alpha)
@@ -28,12 +61,13 @@ pub fn drop_shadow(colour: Hsla, y: f32, blur: f32) -> Vec<BoxShadow> {
 /// The lit inner edge: an absolute overlay inside the border (so it is inset by the border width) whose top
 /// border catches the light. `radius` is the parent's corner radius; the overlay's is one pixel less.
 pub fn lit_edge(radius: f32, alpha: f32) -> Div {
-    div()
-        .absolute()
-        .inset_0()
-        .rounded(px(radius - 1.0))
-        .border_t_1()
-        .border_color(white(alpha))
+    border_top(
+        div()
+            .absolute()
+            .inset_0()
+            .rounded(px(radius - 1.0))
+            .border_color(white(alpha)),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -56,7 +90,6 @@ pub fn button(id: impl Into<ElementId>, label: &str, tone: ButtonTone) -> Statef
         .px(px(11.0))
         .py(px(4.0))
         .rounded(px(RADIUS))
-        .border_1()
         .text_size(px(12.0))
         .child(lit_edge(
             RADIUS,
@@ -67,6 +100,7 @@ pub fn button(id: impl Into<ElementId>, label: &str, tone: ButtonTone) -> Statef
             },
         ))
         .child(label.to_string());
+    let base = border(base);
     match tone {
         ButtonTone::Outline => base
             .border_color(white(0.10))

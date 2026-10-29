@@ -18,7 +18,7 @@ use gpui::{
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use crate::depth::{ButtonTone, button};
+use crate::depth::{ButtonTone, border, button};
 use crate::geom::PhysicalRect;
 use crate::model::{Cmd, Notification, Store, Urgency};
 use crate::monitors::Monitor;
@@ -346,12 +346,13 @@ fn sheen(shape_height: f32) -> impl IntoElement {
 
 /// A faint light ring just inside the border, so the edge reads as a lit bevel (coss ui's `before:inset-0`).
 fn rim(radius: f32) -> impl IntoElement {
-    div()
-        .absolute()
-        .inset_0()
-        .rounded_b(px((radius - 1.0).max(0.0)))
-        .border_1()
-        .border_color(hsla(0.0, 0.0, 1.0, 0.09))
+    border(
+        div()
+            .absolute()
+            .inset_0()
+            .rounded_b(px((radius - 1.0).max(0.0)))
+            .border_color(hsla(0.0, 0.0, 1.0, 0.09)),
+    )
 }
 
 /// Title over a muted second line, as the toast and the list rows show a notification.
@@ -419,7 +420,6 @@ impl Render for PanelView {
                 linear_color_stop(rgb(0x2C2C2F), 0.0),
                 linear_color_stop(rgb(0x1B1B1D), 1.0),
             ))
-            .border_1()
             .border_color(hsla(0.0, 0.0, 0.0, 0.6))
             .shadow(vec![BoxShadow {
                 color: hsla(0.0, 0.0, 0.0, 0.35),
@@ -434,6 +434,7 @@ impl Render for PanelView {
             .text_color(gpui::white())
             .text_size(px(15.0))
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.on_hover(*hovered, cx)));
+        let shape = border(shape);
         let content = div()
             .id("content")
             .flex_none()
@@ -610,6 +611,7 @@ pub fn open_island(
         size: size(px(WINDOW.0), px(WINDOW.1)),
     };
     let monitor = *monitor;
+    crate::depth::set_scale(monitor.scale);
     let handle = cx
         .open_window(
             WindowOptions {
