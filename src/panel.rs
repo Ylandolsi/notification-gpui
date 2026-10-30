@@ -162,6 +162,7 @@ impl PanelView {
         match cmd {
             Cmd::Toast(n) => self.on_toast(n, cx),
             Cmd::Refresh => self.refresh(cx),
+            Cmd::Quit => cx.quit(),
         }
     }
 

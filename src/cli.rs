@@ -12,7 +12,9 @@ const USAGE: &str = "usage:
   notchd                         run the daemon
   notchd notify <title> [body] [--urgency low|normal|critical] [--timeout <ms>] [--id <id>] [--app <name>]
   notchd list | clear | state
-  notchd dnd on|off";
+  notchd dnd on|off
+  notchd autostart on|off        start at login (the notchd.exe it is run from)
+  notchd quit                    stop the daemon";
 
 fn request(method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<(u16, String)> {
     let port = config::port();
@@ -96,6 +98,49 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
                 Some(&json!({ "enabled": enabled })),
             ))
         }
+        Some("autostart") => match args.get(1).map(String::as_str) {
+            Some("on") => crate::autostart::set(true),
+            Some("off") => crate::autostart::set(false),
+            _ => bail!("{USAGE}"),
+        },
+        Some("quit") => show(request("POST", "/v1/quit", None)),
         _ => bail!("{USAGE}"),
+    }
+}
+
+/// The release exe has the GUI subsystem, so it starts without a console. A subcommand run from a terminal
+/// attaches to that terminal and points any unset output handle at it, so its output still shows.
+pub fn attach_console() {
+    use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE};
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
+    };
+    use windows::core::w;
+
+    unsafe {
+        if AttachConsole(ATTACH_PARENT_PROCESS).is_err() {
+            return;
+        }
+        for which in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            // A redirect (`> file`) already set the handle; keep it.
+            if GetStdHandle(which).is_ok_and(|h| h != HANDLE::default() && !h.is_invalid()) {
+                continue;
+            }
+            if let Ok(con) = CreateFileW(
+                w!("CONOUT$"),
+                (GENERIC_READ | GENERIC_WRITE).0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                None,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                None,
+            ) {
+                let _ = SetStdHandle(which, con);
+            }
+        }
     }
 }

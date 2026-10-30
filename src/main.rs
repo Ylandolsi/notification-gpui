@@ -1,6 +1,9 @@
 //! notchd: a notification centre shown through a dynamic-island pill. `notchd` runs the daemon; any other
 //! subcommand talks to a running one over its localhost API.
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod autostart;
 mod cli;
 mod config;
 mod depth;
@@ -27,6 +30,7 @@ fn main() {
     let result = if args.is_empty() {
         daemon()
     } else {
+        cli::attach_console();
         cli::run(&args)
     };
     if let Err(err) = result {

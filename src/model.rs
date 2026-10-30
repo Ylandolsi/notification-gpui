@@ -63,6 +63,8 @@ pub enum Cmd {
     Toast(Notification),
     /// History or Do Not Disturb changed; redraw.
     Refresh,
+    /// Stop the daemon.
+    Quit,
 }
 
 #[derive(Default)]
