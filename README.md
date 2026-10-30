@@ -10,6 +10,8 @@ cargo run                      # the daemon: island + API on 127.0.0.1:7878 (NOT
 notchd notify "Build passed" "42 tests" --app CI [--urgency low|normal|critical] [--timeout ms] [--id key]
 notchd list | clear | state
 notchd dnd on|off
+notchd autostart on|off          # start at login (Run key for the notchd.exe it is run from)
+notchd quit                    # stop the daemon
 ```
 
 - **Idle:** a small pill. Hover shows the count; click opens the history list.
@@ -19,6 +21,13 @@ notchd dnd on|off
 - **Long text:** when the text does not fit, a chevron on the toast or row expands it to the full text (it
   scrolls past about 460 px). An open toast stays up until it is collapsed or clicked.
 - **Do Not Disturb:** posts go to history without a toast; critical still shows.
+
+## Release
+
+The release exe has no console window. Run `notchd.exe` to start the daemon; the subcommands print to the
+terminal they are run from. Pushing a tag such as `v0.0.1` builds it on GitHub (MSVC) and attaches
+`notchd-<tag>-windows-x86_64.zip` and its `.sha256` to a GitHub Release. The exe is unsigned, so SmartScreen
+warns on first run. To add an icon, put `assets/notchd.ico` in place; `build.rs` embeds it.
 
 ## Try it with mock notifications
 
@@ -48,6 +57,7 @@ Every call needs `Authorization: Bearer <token>` (token file: `%APPDATA%\notchd\
 | `DELETE /v1/notifications/{id}` / `DELETE /v1/notifications` | remove one / clear |
 | `PUT /v1/dnd` | `{enabled}` |
 | `GET /v1/state` | `{dnd, count}` |
+| `POST /v1/quit` | stops the daemon |
 
 ## Not yet
 

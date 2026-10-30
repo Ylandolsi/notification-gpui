@@ -42,6 +42,7 @@ pub async fn serve(
         .route("/v1/notifications", get(list).post(post).delete(clear))
         .route("/v1/notifications/{id}", delete(remove))
         .route("/v1/dnd", put(set_dnd))
+        .route("/v1/quit", axum::routing::post(quit))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app);
     axum::serve(listener, router).await?;
@@ -109,5 +110,10 @@ struct Dnd {
 async fn set_dnd(State(app): State<App>, Json(body): Json<Dnd>) -> StatusCode {
     app.store.set_dnd(body.enabled);
     let _ = app.tx.send(Cmd::Refresh);
+    StatusCode::NO_CONTENT
+}
+
+async fn quit(State(app): State<App>) -> StatusCode {
+    let _ = app.tx.send(Cmd::Quit);
     StatusCode::NO_CONTENT
 }
