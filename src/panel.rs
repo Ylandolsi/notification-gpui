@@ -21,6 +21,7 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use crate::depth::{ButtonTone, border, button};
 use crate::geom::PhysicalRect;
 use crate::model::{Cmd, Notification, Store, Urgency};
+use crate::winactivate;
 use crate::monitors::Monitor;
 use crate::spring::Spring;
 use crate::winapi::{self as window, Hwnd};
@@ -494,8 +495,12 @@ impl Render for PanelView {
                             .child(format!("+{more}")),
                     );
                 }
-                // A click anywhere on the toast ends it; it stays in the history.
-                row.on_click(cx.listener(|this, _, _, cx| this.advance(cx)))
+                // A click anywhere on the toast ends it, and does what the native one would; it stays in the history.
+                let id = n.id.clone();
+                row.on_click(cx.listener(move |this, _, _, cx| {
+                    winactivate::activate(&id);
+                    this.advance(cx)
+                }))
             }
             View::List => {
                 let history = self.store.history();
@@ -548,9 +553,15 @@ impl Render for PanelView {
                 }
                 for (ix, n) in history.iter().take(LIST_ROWS).enumerate() {
                     let id = n.id.clone();
+                    let open_id = n.id.clone();
                     rows =
                         rows.child(
                             div()
+                                .id(("row", ix))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    winactivate::activate(&open_id);
+                                    this.remove(&open_id, cx)
+                                }))
                                 .h(px(LIST_ROW))
                                 .w_full()
                                 .px(px(16.0))
@@ -560,7 +571,11 @@ impl Render for PanelView {
                                 .child(dot(urgency_colour(n.urgency)))
                                 .child(text_column(n))
                                 .child(button(("remove", ix), "×", ButtonTone::Ghost).on_click(
-                                    cx.listener(move |this, _, _, cx| this.remove(&id, cx)),
+                                    cx.listener(move |this, _, _, cx| {
+                                        // The row's own click would open the notification.
+                                        cx.stop_propagation();
+                                        this.remove(&id, cx)
+                                    }),
                                 )),
                         );
                 }

@@ -10,6 +10,7 @@ mod monitors;
 mod panel;
 mod server;
 mod spring;
+mod winactivate;
 mod winnotif;
 #[allow(dead_code)]
 mod winapi;
