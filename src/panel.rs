@@ -11,14 +11,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, AppContext, Bounds, BoxShadow, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowKind, WindowOptions, div, hsla, linear_color_stop, linear_gradient, point,
-    px, rgb, size,
+    AnyElement, App, AppContext, Bounds, BoxShadow, Context, ElementId, Font, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, PathBuilder, Render,
+    StatefulInteractiveElement, Styled, TextRun, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowKind, WindowOptions, canvas, div, font, hsla, linear_color_stop, linear_gradient, point, px,
+    rgb, size,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use crate::depth::{ButtonTone, border, button};
+use crate::depth::{ButtonTone, black, border, button, drop_shadow, white};
 use crate::geom::PhysicalRect;
 use crate::model::{Cmd, Notification, Store, Urgency};
 use crate::winactivate;
@@ -36,13 +37,22 @@ const LIST_ROW: f32 = 54.0;
 const LIST_EMPTY: f32 = 44.0;
 /// Rows the list shows; the rest stay in history.
 const LIST_ROWS: usize = 5;
+/// The tallest the shape gets: an expanded notification scrolls past it.
+const MAX_H: f32 = 460.0;
+/// Space above and below the text of an expanded notification.
+const EXPAND_PAD: f32 = 10.0;
+/// Layout of a row, to work out how wide its text column is: padding on each side, the dot and the gaps and
+/// buttons beside the text.
+const ROW_PAD: f32 = 16.0;
+const ROW_GAP: f32 = 12.0;
+const DOT: f32 = 8.0;
+const BUTTON_W: f32 = 32.0;
+/// GPUI's default line height is the golden ratio times the text size.
+const LINE_HEIGHT: f32 = 1.618_034;
 /// The window's own size: the biggest shape. It never changes; the clip follows the shape.
 /// Room kept around the shape, on the sides and below, for its shadow.
 const MARGIN: f32 = 20.0;
-const WINDOW: (f32, f32) = (
-    LIST_W + 2.0 * MARGIN,
-    LIST_HEADER + LIST_ROWS as f32 * LIST_ROW + 8.0 + MARGIN,
-);
+const WINDOW: (f32, f32) = (LIST_W + 2.0 * MARGIN, MAX_H + MARGIN);
 /// How long a pointer may leave before the hover shape collapses: GPUI can report a short leave while the
 /// shape changes size under the pointer.
 const HOVER_LEAVE: Duration = Duration::from_millis(120);
@@ -79,6 +89,8 @@ pub struct PanelView {
     pending: VecDeque<Notification>,
     store: Arc<Store>,
     hwnd: Hwnd,
+    /// The notification showing its full text, and the row height that text needs (before the cap).
+    expanded: Option<(String, f32)>,
     /// The drawn shape's width and height, both started at `start`.
     w: Spring,
     h: Spring,
@@ -97,17 +109,52 @@ impl PanelView {
         match &self.view {
             View::Idle { hover: false } => IDLE,
             View::Idle { hover: true } => HOVER,
-            View::Toast(_) => TOAST,
+            View::Toast(n) => match &self.expanded {
+                Some((id, height)) if *id == n.id => (TOAST.0, height.clamp(TOAST.1, MAX_H)),
+                _ => TOAST,
+            },
             View::List => {
-                let rows = self.store.history().len().min(LIST_ROWS);
+                let history = self.store.history();
+                let rows = history.len().min(LIST_ROWS);
                 let body = if rows == 0 {
                     LIST_EMPTY
                 } else {
-                    rows as f32 * LIST_ROW + 8.0
+                    history
+                        .iter()
+                        .take(rows)
+                        .map(|n| self.row_height(&n.id, rows))
+                        .sum::<f32>()
+                        + 8.0
                 };
                 (LIST_W, LIST_HEADER + body)
             }
         }
+    }
+
+    /// A list row's height: expanded, it takes what the text needs, but the list never outgrows `MAX_H`.
+    fn row_height(&self, id: &str, rows: usize) -> f32 {
+        match &self.expanded {
+            Some((open, height)) if open == id => height.clamp(LIST_ROW, expanded_row_cap(rows)),
+            _ => LIST_ROW,
+        }
+    }
+
+    /// Opens or closes the full text of notification `id`, which needs `height` as a row.
+    fn toggle_expand(&mut self, id: &str, height: f32, cx: &mut Context<Self>) {
+        if self.expanded.as_ref().is_some_and(|(open, _)| open == id) {
+            self.expanded = None;
+            // Reading stopped the toast's timer; a toast that is still up gets a fresh one.
+            if let View::Toast(n) = &self.view {
+                let n = n.clone();
+                self.show_toast(n, cx);
+                return;
+            }
+        } else {
+            self.expanded = Some((id.to_string(), height));
+            self.toast_generation = self.toast_generation.wrapping_add(1);
+        }
+        self.animate_to_view();
+        cx.notify();
     }
 
     /// Applies what the server sent.
@@ -145,6 +192,13 @@ impl PanelView {
         let history = self.store.history();
         self.pending
             .retain(|p| history.iter().any(|h| h.id == p.id));
+        if self
+            .expanded
+            .as_ref()
+            .is_some_and(|(id, _)| !history.iter().any(|h| h.id == *id))
+        {
+            self.expanded = None;
+        }
         if let View::Toast(current) = &self.view
             && !history.iter().any(|h| h.id == current.id)
         {
@@ -156,6 +210,7 @@ impl PanelView {
     }
 
     fn show_toast(&mut self, n: Notification, cx: &mut Context<Self>) {
+        self.expanded = None;
         self.toast_generation = self.toast_generation.wrapping_add(1);
         let generation = self.toast_generation;
         if let Some(duration) = n.toast_duration() {
@@ -179,6 +234,7 @@ impl PanelView {
         match self.pending.pop_front() {
             Some(next) => self.show_toast(next, cx),
             None => {
+                self.expanded = None;
                 self.toast_generation = self.toast_generation.wrapping_add(1);
                 self.view = View::Idle { hover: false };
                 self.animate_to_view();
@@ -188,6 +244,7 @@ impl PanelView {
     }
 
     fn open_list(&mut self, cx: &mut Context<Self>) {
+        self.expanded = None;
         self.toast_generation = self.toast_generation.wrapping_add(1);
         self.pending.clear();
         self.view = View::List;
@@ -196,6 +253,7 @@ impl PanelView {
     }
 
     fn close_list(&mut self, cx: &mut Context<Self>) {
+        self.expanded = None;
         self.view = View::Idle { hover: false };
         self.animate_to_view();
         cx.notify();
@@ -356,32 +414,152 @@ fn rim(radius: f32) -> impl IntoElement {
     )
 }
 
-/// Title over a muted second line, as the toast and the list rows show a notification.
-fn text_column(n: &Notification) -> impl IntoElement {
-    let sub = if n.body.is_empty() {
+/// The tallest an expanded list row gets with `rows` rows showing: the others keep their height.
+fn expanded_row_cap(rows: usize) -> f32 {
+    MAX_H - LIST_HEADER - 8.0 - (rows - 1) as f32 * LIST_ROW
+}
+
+/// Width of the text column in a row `row_w` wide with `buttons` fixed-width controls beside the text.
+fn text_width(row_w: f32, buttons: usize) -> f32 {
+    row_w - 2.0 * ROW_PAD - DOT - ROW_GAP - buttons as f32 * (BUTTON_W + ROW_GAP)
+}
+
+fn sub_line(n: &Notification) -> String {
+    if n.body.is_empty() {
         n.app.clone()
     } else {
         format!("{} · {}", n.app, n.body)
+    }
+}
+
+fn text_run(len: usize, weight: FontWeight) -> TextRun {
+    TextRun {
+        len,
+        font: Font {
+            weight,
+            ..font(FONT)
+        },
+        color: Hsla::default(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    }
+}
+
+/// `text` cut to `width` with an ellipsis. GPUI's own truncation depends on the order it is measured in, and
+/// can leave the text clipped mid-word with no ellipsis.
+fn ellipsize(window: &Window, text: String, size: f32, weight: FontWeight, width: f32) -> String {
+    let mut runs = vec![text_run(text.len(), weight)];
+    window
+        .text_system()
+        .line_wrapper(runs[0].font.clone(), px(size))
+        .truncate_line(text.into(), px(width), "…", &mut runs)
+        .to_string()
+}
+
+/// The row height `n` needs to show its text in full, or `None` when the collapsed row already shows it
+/// all. `buttons` counts the controls beside the text, without the expand button.
+fn full_height(window: &Window, n: &Notification, row_w: f32, buttons: usize) -> Option<f32> {
+    let lines = |text: String, size: f32, weight: FontWeight, width: f32| -> f32 {
+        let run = text_run(text.len(), weight);
+        window
+            .text_system()
+            .shape_text(text.into(), px(size), &[run], Some(px(width)), None)
+            .map_or(1, |lines| {
+                lines.iter().map(|l| l.wrap_boundaries().len() + 1).sum()
+            })
+            .max(1) as f32
     };
-    div()
-        .flex_1()
-        .min_w_0()
+    let (title, sub) = (n.title.clone(), sub_line(n));
+    let fits = |width| {
+        lines(title.clone(), 14.0, FontWeight::MEDIUM, width) == 1.0
+            && lines(sub.clone(), 12.0, FontWeight::NORMAL, width) == 1.0
+    };
+    if fits(text_width(row_w, buttons)) {
+        return None;
+    }
+    let width = text_width(row_w, buttons + 1);
+    let text = lines(title.clone(), 14.0, FontWeight::MEDIUM, width) * 14.0 * LINE_HEIGHT
+        + lines(sub.clone(), 12.0, FontWeight::NORMAL, width) * 12.0 * LINE_HEIGHT;
+    Some(text.ceil() + 2.0 * EXPAND_PAD)
+}
+
+/// A ghost button with a down chevron, or an up one when `open`. Drawn as a stroke: Rubik has no chevron glyph.
+fn expand_button(id: impl Into<ElementId>, open: bool) -> gpui::Stateful<gpui::Div> {
+    let chevron = canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let centre = bounds.center();
+            let (half_w, tip) = (px(4.0), if open { px(-2.5) } else { px(2.5) });
+            let mut path = PathBuilder::stroke(px(1.5));
+            path.move_to(point(centre.x - half_w, centre.y - tip));
+            path.line_to(point(centre.x, centre.y + tip));
+            path.line_to(point(centre.x + half_w, centre.y - tip));
+            if let Ok(path) = path.build() {
+                window.paint_path(path, hsla(0.0, 0.0, 1.0, 0.85));
+            }
+        },
+    )
+    .absolute()
+    .inset_0();
+    // A space for a label keeps the button as tall as its neighbours.
+    button(id, " ", ButtonTone::Ghost)
+        .w(px(BUTTON_W))
+        .child(chevron)
+}
+
+/// Title over a muted second line, as the toast and the list rows show a notification. Collapsed, each line
+/// is cut off with an ellipsis to fit `width`; `expanded` (an id and the height available for the text) wraps
+/// them and scrolls past that height.
+fn text_column(
+    window: &Window,
+    n: &Notification,
+    width: f32,
+    expanded: Option<(ElementId, f32)>,
+) -> AnyElement {
+    let (title, sub) = (n.title.clone(), sub_line(n));
+    let (title, sub) = if expanded.is_some() {
+        (title, sub)
+    } else {
+        (
+            ellipsize(window, title, 14.0, FontWeight::MEDIUM, width),
+            ellipsize(window, sub, 12.0, FontWeight::NORMAL, width),
+        )
+    };
+    let wrap = expanded.is_some();
+    let line = |line: gpui::Div| {
+        if wrap {
+            line
+        } else {
+            line.whitespace_nowrap().overflow_hidden()
+        }
+    };
+    let column = div()
         .flex()
         .flex_col()
         .child(
-            div()
-                .truncate()
+            line(div())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(14.0))
-                .child(n.title.clone()),
+                .child(title),
         )
         .child(
-            div()
-                .truncate()
+            line(div())
                 .text_size(px(12.0))
                 .text_color(Hsla::from(rgb(MUTED)))
                 .child(sub),
-        )
+        );
+    match expanded {
+        None => column.flex_1().min_w_0().into_any_element(),
+        Some((id, max_h)) => div()
+            .id(id)
+            .flex_1()
+            .min_w_0()
+            .max_h(px(max_h))
+            .overflow_y_scroll()
+            .child(column)
+            .into_any_element(),
+    }
 }
 
 impl Render for PanelView {
@@ -481,11 +659,18 @@ impl Render for PanelView {
             }
             View::Toast(n) => {
                 let more = self.pending.len();
+                let full = full_height(window, n, TOAST.0, usize::from(more > 0));
+                let open = self.expanded.as_ref().is_some_and(|(id, _)| *id == n.id);
                 let mut row = content
                     .px(px(16.0))
                     .gap(px(12.0))
                     .child(dot(urgency_colour(n.urgency)))
-                    .child(text_column(n));
+                    .child(text_column(
+                        window,
+                        n,
+                        text_width(TOAST.0, usize::from(more > 0) + usize::from(full.is_some())),
+                        open.then(|| ("toast-text".into(), target_h - 2.0 * EXPAND_PAD)),
+                    ));
                 if more > 0 {
                     row = row.child(
                         div()
@@ -495,12 +680,27 @@ impl Render for PanelView {
                             .child(format!("+{more}")),
                     );
                 }
+                if let Some(height) = full {
+                    let toggle = n.id.clone();
+                    row = row.child(expand_button("expand", open).on_click(cx.listener(
+                        move |this, _, _, cx| {
+                            // The toast's own click would open the notification.
+                            cx.stop_propagation();
+                            this.toggle_expand(&toggle, height, cx)
+                        },
+                    )));
+                }
                 // A click anywhere on the toast ends it, and does what the native one would; it stays in the history.
                 let id = n.id.clone();
-                row.on_click(cx.listener(move |this, _, _, cx| {
-                    winactivate::activate(&id);
-                    this.advance(cx)
-                }))
+                // Open, the text is being read, so a click on it leaves the toast up.
+                if open {
+                    row
+                } else {
+                    row.on_click(cx.listener(move |this, _, _, cx| {
+                        winactivate::activate(&id);
+                        this.advance(cx)
+                    }))
+                }
             }
             View::List => {
                 let history = self.store.history();
@@ -551,33 +751,56 @@ impl Render for PanelView {
                             .child("No notifications"),
                     );
                 }
+                let shown = history.len().min(LIST_ROWS);
                 for (ix, n) in history.iter().take(LIST_ROWS).enumerate() {
                     let id = n.id.clone();
                     let open_id = n.id.clone();
-                    rows =
-                        rows.child(
-                            div()
-                                .id(("row", ix))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    winactivate::activate(&open_id);
-                                    this.remove(&open_id, cx)
-                                }))
-                                .h(px(LIST_ROW))
-                                .w_full()
-                                .px(px(16.0))
-                                .gap(px(12.0))
-                                .flex()
-                                .items_center()
-                                .child(dot(urgency_colour(n.urgency)))
-                                .child(text_column(n))
-                                .child(button(("remove", ix), "×", ButtonTone::Ghost).on_click(
-                                    cx.listener(move |this, _, _, cx| {
-                                        // The row's own click would open the notification.
-                                        cx.stop_propagation();
-                                        this.remove(&id, cx)
-                                    }),
-                                )),
-                        );
+                    let toggle = n.id.clone();
+                    let full = full_height(window, n, LIST_W, 1);
+                    let open = self.expanded.as_ref().is_some_and(|(id, _)| *id == n.id);
+                    let row_h = self.row_height(&n.id, shown);
+                    // The highlight is inset from the island's edge; the padding keeps the content where it was.
+                    // Hovered it is a translucent fill with a hairline and a small shadow, pressed it is pushed in.
+                    let mut row = border(div().id(("row", ix)))
+                        .h(px(row_h))
+                        .mx(px(8.0))
+                        .px(px(8.0))
+                        .rounded(px(10.0))
+                        .border_color(white(0.0))
+                        .hover(|s| {
+                            s.bg(white(0.07))
+                                .border_color(white(0.09))
+                                .shadow(drop_shadow(black(0.35), 1.0, 2.0))
+                        })
+                        .active(|s| s.bg(white(0.10)).shadow(Vec::new()))
+                        .gap(px(12.0))
+                        .flex()
+                        .items_center()
+                        .child(dot(urgency_colour(n.urgency)))
+                        .child(text_column(
+                            window,
+                            n,
+                            text_width(LIST_W, 1 + usize::from(full.is_some())),
+                            open.then(|| (("row-text", ix).into(), row_h - 2.0 * EXPAND_PAD)),
+                        ));
+                    if let Some(height) = full {
+                        row = row.child(expand_button(("expand", ix), open).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                // The row's own click would open the notification.
+                                cx.stop_propagation();
+                                this.toggle_expand(&toggle, height, cx)
+                            },
+                        )));
+                    }
+                    let row = row.child(button(("remove", ix), "×", ButtonTone::Ghost).on_click(
+                        cx.listener(move |this, _, _, cx| {
+                            // The row's own click would open the notification.
+                            cx.stop_propagation();
+                            this.remove(&id, cx)
+                        }),
+                    ));
+                    // A click opens the notification and leaves it in the list; the × removes it.
+                    rows = rows.child(row.on_click(move |_, _, _| winactivate::activate(&open_id)));
                 }
                 content.flex_col().items_start().child(header).child(rows)
             }
@@ -652,6 +875,7 @@ pub fn open_island(
                     pending: VecDeque::new(),
                     store,
                     hwnd,
+                    expanded: None,
                     w: Spring::at_rest(IDLE.0),
                     h: Spring::at_rest(IDLE.1),
                     start: Instant::now(),
@@ -671,4 +895,18 @@ pub fn open_island(
         window::show_no_activate(view.hwnd);
     });
     Some(handle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_expanded_row_never_grows_the_list_past_the_cap() {
+        for rows in 1..=LIST_ROWS {
+            let list = LIST_HEADER + 8.0 + (rows - 1) as f32 * LIST_ROW + expanded_row_cap(rows);
+            assert!(list <= MAX_H, "{rows} rows: {list}");
+            assert!(expanded_row_cap(rows) >= LIST_ROW);
+        }
+    }
 }

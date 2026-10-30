@@ -15,7 +15,26 @@ notchd dnd on|off
 - **Idle:** a small pill. Hover shows the count; click opens the history list.
 - **Toast:** a notification grows the pill, then it shrinks back after its timeout. Click a toast to dismiss it.
   Critical stays until dismissed and jumps the queue. A same-`id` post replaces in place.
+- **List:** a click on a row opens the notification in its source app and keeps it in the list; the × removes it.
+- **Long text:** when the text does not fit, a chevron on the toast or row expands it to the full text (it
+  scrolls past about 460 px). An open toast stays up until it is collapsed or clicked.
 - **Do Not Disturb:** posts go to history without a toast; critical still shows.
+
+## Try it with mock notifications
+
+With the daemon running (`cargo run`), post throwaway notifications from another terminal:
+
+```
+notchd notify "Short one" "Fits on a line." --app Mock --id mock-short
+notchd notify "Medium" "Your build finished with 3 warnings and 0 errors, see the log for the full list of what changed." --app Mock --id mock-medium
+notchd notify "Long title that does not fit in one line of the island at all" "Short body" --app Mock --urgency low --id mock-title
+notchd notify "Critical" "Stays until dismissed and jumps the queue." --app Mock --urgency critical --id mock-critical
+notchd notify "Sticky" "A zero timeout stays until dismissed." --app Mock --timeout 0 --id mock-sticky
+```
+
+Toasts queue behind each other, so click one (or wait) to see the next. Click the pill to open the list and
+try the chevron on a row. Long text that scrolls: pass a body of several hundred words. `notchd clear` empties
+the history, `notchd list` and `notchd state` show what the daemon holds.
 
 ## API
 
