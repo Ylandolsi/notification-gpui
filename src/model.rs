@@ -134,6 +134,17 @@ impl Store {
     }
 }
 
+/// Stores a notification and tells the island: Do Not Disturb keeps the toast back, critical gets through.
+pub fn publish(store: &Store, tx: &flume::Sender<Cmd>, new: NewNotification) -> Notification {
+    let n = store.post(new);
+    if !store.dnd() || n.urgency == Urgency::Critical {
+        let _ = tx.send(Cmd::Toast(n.clone()));
+    } else {
+        let _ = tx.send(Cmd::Refresh);
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

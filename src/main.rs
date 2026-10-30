@@ -10,6 +10,7 @@ mod monitors;
 mod panel;
 mod server;
 mod spring;
+mod winnotif;
 #[allow(dead_code)]
 mod winapi;
 
@@ -42,6 +43,8 @@ fn daemon() -> anyhow::Result<()> {
     let token = config::token()?;
     let store = Arc::new(Store::default());
     let (tx, rx) = flume::unbounded();
+
+    winnotif::spawn(store.clone(), tx.clone());
 
     let server_store = store.clone();
     std::thread::spawn(move || {

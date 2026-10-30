@@ -12,7 +12,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::model::{Cmd, NewNotification, Store, Urgency};
+use crate::model::{Cmd, NewNotification, Store, publish};
 
 #[derive(Clone)]
 struct App {
@@ -82,13 +82,7 @@ async fn list(State(app): State<App>) -> Json<Value> {
 }
 
 async fn post(State(app): State<App>, Json(new): Json<NewNotification>) -> Json<Value> {
-    let n = app.store.post(new);
-    // Do Not Disturb keeps the toast back; critical gets through.
-    if !app.store.dnd() || n.urgency == Urgency::Critical {
-        let _ = app.tx.send(Cmd::Toast(n.clone()));
-    } else {
-        let _ = app.tx.send(Cmd::Refresh);
-    }
+    let n = publish(&app.store, &app.tx, new);
     Json(json!({ "id": n.id }))
 }
 
